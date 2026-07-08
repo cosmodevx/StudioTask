@@ -1,0 +1,9 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local BuyItem = ReplicatedStorage:WaitForChild("BuyItem")
+
+
+local buyButton = script.Parent
+buyButton.MouseButton1Click:Connect(function()
+	BuyItem:FireServer("Sword")
+end)

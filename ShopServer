@@ -1,0 +1,144 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+
+local ShopItems = {
+	Sword = { price = 100, toolName = "ClassicSword" },
+}
+
+
+local PlayerInventories = {}
+
+local RateLimits = {}
+
+local RATE_LIMIT_SECONDS = 0.5
+local STARTING_COINS = 500
+
+local function onPlayerAdded(player)
+	
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+
+	
+	local coins = Instance.new("IntValue")
+	coins.Name = "Coins"
+	coins.Value = STARTING_COINS
+	coins.Parent = leaderstats
+
+	
+	PlayerInventories[player] = {}
+	RateLimits[player] = 0
+
+
+	player.CharacterAdded:Connect(function(character)
+		local inventory = PlayerInventories[player]
+		if not inventory then return end
+
+		local backpack = player:FindFirstChild("Backpack")
+		if not backpack then return end
+
+		for itemId, owned in inventory do
+			if owned then
+				local itemData = ShopItems[itemId]
+				if itemData then
+					local toolTemplate = ReplicatedStorage:FindFirstChild(itemData.toolName)
+					if toolTemplate and toolTemplate:IsA("Tool") then
+						local tool = toolTemplate:Clone()
+						tool.Parent = backpack
+					end
+				end
+			end
+		end
+	end)
+end
+
+
+local function onPlayerRemoving(player)
+	PlayerInventories[player] = nil
+	RateLimits[player] = nil
+end
+
+
+local BuyItem = ReplicatedStorage:FindFirstChild("BuyItem")
+
+if BuyItem then
+	BuyItem.OnServerEvent:Connect(function(player, itemId)
+		
+		if type(itemId) ~= "string" then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": itemId is not a string")
+			return
+		end
+
+		
+		local now = tick()
+		if now - RateLimits[player] < RATE_LIMIT_SECONDS then
+			warn("[Shop] Rate limited " .. player.Name)
+			return
+		end
+		RateLimits[player] = now
+
+		
+		local itemData = ShopItems[itemId]
+		if itemData == nil then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": item '" .. tostring(itemId) .. "' does not exist")
+			return
+		end
+
+		
+		local toolTemplate = ReplicatedStorage:FindFirstChild(itemData.toolName)
+		if not toolTemplate or not toolTemplate:IsA("Tool") then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": tool '" .. itemData.toolName .. "' not found in ReplicatedStorage")
+			return
+		end
+
+		
+		local leaderstats = player:FindFirstChild("leaderstats")
+		if not leaderstats then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": no leaderstats found")
+			return
+		end
+
+		local coins = leaderstats:FindFirstChild("Coins")
+		if not coins then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": no Coins value found")
+			return
+		end
+
+		if coins.Value < itemData.price then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": not enough coins (has " .. coins.Value .. ", needs " .. itemData.price .. ")")
+			return
+		end
+
+	
+		local inventory = PlayerInventories[player]
+		if not inventory then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": no inventory found")
+			return
+		end
+
+		if inventory[itemId] then
+			warn("[Shop] Rejected buy from " .. player.Name .. ": already owns '" .. itemId .. "'")
+			return
+		end
+
+		
+		coins.Value = coins.Value - itemData.price
+		inventory[itemId] = true
+
+		local backpack = player:FindFirstChild("Backpack")
+		if backpack then
+			local tool = toolTemplate:Clone()
+			tool.Parent = backpack
+		end
+
+		print("[Shop] " .. player.Name .. " bought '" .. itemId .. "' for " .. itemData.price .. " coins. Remaining: " .. coins.Value)
+	end)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+for _, player in Players:GetPlayers() do
+	onPlayerAdded(player)
+end
